@@ -1,69 +1,96 @@
-# T09. Чужой файл
+# T09. Запусти программу
 
-**Тема:** права доступа и группы · **Сложность:** 🟢 · **Время:** 4–6 минут
+**Тема:** права на файл · **Сложность:** 🟢 · **Время:** 4–6 минут
 
 ## Условие для студента
 
-> В каталоге `/opt/data` лежит файл `secret.txt`, который вам не
-> принадлежит. Читать его разрешено группе `analysts`.
+> Флаг задачи зашифрован и лежит в файле `flag.enc` в вашем домашнем
+> каталоге. Рядом — скрипт `decrypt.sh` и файл `README`.
 >
-> Получите флаг из `secret.txt`. Повышать привилегии не нужно.
+> Чтобы расшифровать флаг, сначала нужно найти **ключ**: случайную
+> hex-строку из 32 символов. Ключ печатает программа `/opt/runme`, но
+> сейчас её нельзя ни прочитать, ни запустить.
+>
+> Запустите программу, получите ключ и выполните:
+>
+> ```bash
+> ./decrypt.sh <ключ>
+> ```
 
-Имя файла известно, но владелец и права скрыты.
+Программа принадлежит вам, повышать привилегии не нужно.
 
 ## Состояние контейнера
 
 ```text
-/opt/data/
-├── secret.txt   # root:analysts, права 640, содержит флаг
-├── draft.txt    # отвлекающий
-├── todo.txt     # отвлекающий
-└── stats.txt    # отвлекающий
+/home/ctf/
+├── flag.enc          # зашифрованный флаг
+├── decrypt.sh        # ./decrypt.sh <ключ>
+├── README
+└── hint.txt          # подсказка
+
+/opt/
+└── runme   # ctf:ctf, права 0000 (ни чтения, ни выполнения)
 ```
 
-Пользователь `ctf` состоит в группе `analysts` (дополнительная группа).
-Обычные отвлекающие файлы доступны всем.
+Пользователь: `ctf`, cwd: `/home/ctf`. Файл — скомпилированная
+ELF-программа; ключ внутри хранится в XOR-закодированном виде и не
+виден через `cat`/`strings` даже после выдачи права на чтение.
 
 ## Флаг
 
 ```text
-flag{groups_matter}
+SSL{execution_permission}
 ```
 
-Переопределяется переменной `TASK_FLAG`.
+Флаг не хранится в образе открытым текстом: он XOR-зашифрован
+случайным ключом в `flag.enc`.  Ключ печатается в stdout на этапе
+сборки, XOR-кодируется байтом `0x5A` и зашивается в `/opt/runme`.
 
 ## Ожидаемые навыки
 
-`id`, `ls -l`, `groups`, `cat`.
+`ls -l`, `chmod u+x`, запуск программы `/opt/runme`, понимание бита `x`.
 
 ## Подсказки
 
-1. Посмотрите на владельца и права файла: `ls -l /opt/data/secret.txt`.
-   Триада `640` означает чтение для владельца и для группы.
-2. Проверьте, в каких группах вы состоите: `id` или `groups`.
-3. Если ваша группа совпадает с группой файла, чтения достаточно —
-   никаких `sudo` не требуется.
+1. Посмотрите на права: `ls -l /opt/runme`. Триада `000` не содержит
+   ни `r`, ни `x`.
+2. Файл принадлежит вам, поэтому право можно выдать самому:
+   `chmod u+x /opt/runme`. `sudo` не нужен.
+3. Читать файл бессмысленно: это бинарник, а ключ в нём закодирован —
+   его выдаёт только сама программа при запуске.
+4. Подсказка также лежит в `~/hint.txt`.
 
 ## Решение
 
 ```bash
-ls -l /opt/data/secret.txt   # root analysts ... -rw-r-----
-id                            # ... groups=...,analysts
-cat /opt/data/secret.txt
+ls -l /opt/runme
+chmod u+x /opt/runme
+/opt/runme
+# <ключ>
+
+cd ~
+./decrypt.sh <ключ>
+# SSL{execution_permission}
+```
+
+Либо одной строкой:
+
+```bash
+./decrypt.sh "$(chmod u+x /opt/runme && /opt/runme)"
 ```
 
 ## Smoke test
 
 ```bash
-docker run --rm linux-ctf/t09 bash -c 'id -Gn ctf | grep -qw analysts'
-docker run --rm linux-ctf/t09 bash -c 'test -f /opt/data/secret.txt'
+docker run --rm linux-ctf/t09 test -f /opt/runme
+docker run --rm linux-ctf/t09 bash -c 'test "$(stat -c %A /opt/runme)" = "----------"'
+docker run --rm linux-ctf/t09 bash -c 'cat /opt/runme >/dev/null 2>&1 && exit 1 || exit 0'
+docker run --rm linux-ctf/t09 bash -c '/opt/runme >/dev/null 2>&1 && exit 1 || exit 0'
 docker run --rm linux-ctf/t09 bash -c \
-    'test "$(stat -c %U:%G /opt/data/secret.txt)" = "root:analysts"'
-docker run --rm linux-ctf/t09 bash -c \
-    'test "$(stat -c %a /opt/data/secret.txt)" = "640"'
-docker run --rm linux-ctf/t09 grep -q 'flag{' /opt/data/secret.txt
+  'k=$(chmod u+x /opt/runme && /opt/runme); /home/ctf/decrypt.sh "$k" | grep -q "SSL{execution_permission}"'
+docker run --rm linux-ctf/t09 bash -c 'grep -rn "SSL{" /home /opt /etc /usr 2>/dev/null && exit 1 || exit 0'
 ```
 
-Проверяется: `ctf` входит в группу `analysts`, файл существует с
-владельцем `root:analysts` и правами `640`, и `ctf` может его прочитать
-(команды выполняются уже от имени `ctf`).
+Проверяется: файл существует с правами `000`, не читается и не
+исполняется, а после `chmod u+x` программа печатает ключ, который
+подходит к `flag.enc`.

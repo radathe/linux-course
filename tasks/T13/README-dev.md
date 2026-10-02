@@ -1,68 +1,84 @@
-# T13. Hex or Base64?
+# T13. Странная программа
 
-**Тема:** кодирование данных · **Сложность:** 🟡 · **Время:** 5–8 минут
+**Тема:** анализ бинарников · **Сложность:** 🟢 · **Время:** 5–10 минут
 
 ## Условие для студента
 
-> В домашнем каталоге лежит файл `message.txt`. В нём записана длинная
-> строка из шестнадцатеричных символов.
+> В домашнем каталоге есть программа `checker`. Она просит на вход
+> какой-то пароль и без него ничего не показывает.
 >
-> Декодируйте её: сначала из hex, затем — то, что получится, из Base64.
-> Флаг спрятан на втором уровне.
+> Разберитесь, что это за программа, найдите пароль, а затем получите
+> **ключ** — программа напечатает его при верном пароле.  После этого
+> расшифруйте флаг:
+>
+> ```bash
+> ./decrypt.sh <ключ>
+> ```
 
-Имя файла известно, содержимое скрыто.
+Формат флага: `SSL{...}`.  Пароль виден в строках программы; сам ключ в
+открытом виде внутри не хранится, а замаскирован.
 
 ## Состояние контейнера
 
 ```text
 /home/ctf/
-└── message.txt   # hex-строка от "The flag is: <base64(флаг)>"
+├── checker            <- исполняемый ELF, проверяет пароль
+├── flag.enc           <- флаг, XOR-зашифрованный случайным ключом
+├── decrypt.sh         <- ./decrypt.sh <ключ>
+└── README
 ```
 
-Открытым текстом флаг в файле не хранится: это hex-представление строки
-`The flag is: <base64(флаг)>`. Пользователь: `ctf`, cwd: `/home/ctf`.
+Пользователь: `ctf`, cwd: `/home/ctf`.  Файл `checker` исполняемый
+(0755), владелец `ctf`.  При неверном пароле программа печатает
+`Access denied`, при верном — `Access granted!` и ключ.
 
 ## Флаг
 
 ```text
-flag{hex_and_base64}
+SSL{simple_reverse}
 ```
 
-Переопределяется переменной `TASK_FLAG`.
+Ключ генерируется случайно на этапе сборки и в бинарник попадает уже
+XOR-замаскированным (маска `0x5A`), поэтому `strings` показывает только
+пароль.
 
 ## Ожидаемые навыки
 
-`file`, `head`, `xxd -r -p`, `base64 -d`.
+`file`, `strings`, запуск программ с аргументами, базовые понятия
+обратной разработки.
 
 ## Подсказки
 
-1. Длина строки кратна двум, а символы — только `0-9a-f`: это hex.
-   Переведите её обратно в байты через `xxd -r -p`.
-2. После первого декодирования получится человекочитаемый текст вида
-   `The flag is: <нечто>`. Это `<нечто>` и есть Base64.
-3. Декодируйте Base64 командой `base64 -d` (или `base64 --decode`).
+1. Определите тип файла (`file`) и поищите читаемые строки (`strings`).
+2. Среди строк программы есть подсказка вида
+   `Correct password: ...` — это и есть пароль.
+3. Передайте найденный пароль программе первым аргументом — она
+   напечатает ключ (32 hex-символа).
+4. Ключ в открытом виде в бинарнике не лежит: при неверном пароле
+   ничего не выводится.
 
 ## Решение
 
 ```bash
-cd /home/ctf
-head -c 80 message.txt; echo       # видим hex
-xxd -r -p message.txt > decoded.txt   # "The flag is: <base64>"
-cat decoded.txt
-# достаём base64-часть и декодируем
-sed 's/^The flag is: //' decoded.txt | base64 -d
-echo
+file checker
+strings checker | grep -i password
+# Correct password: open-sesame
+./checker open-sesame
+# Access granted!
+# <ключ>
+./decrypt.sh <ключ>
+# SSL{simple_reverse}
 ```
 
 ## Smoke test
 
 ```bash
-docker run --rm linux-ctf/t13 test -f /home/ctf/message.txt
-docker run --rm linux-ctf/t13 bash -c \
-    'xxd -r -p /home/ctf/message.txt | grep -q "^The flag is: "'
-docker run --rm linux-ctf/t13 bash -c \
-    'xxd -r -p /home/ctf/message.txt | sed "s/^The flag is: //" | base64 -d | grep -q "flag{"'
+docker run --rm linux-ctf/t13 test -x /home/ctf/checker
+docker run --rm linux-ctf/t13 sh -c 'strings /home/ctf/checker | grep -q "open-sesame"'
+docker run --rm linux-ctf/t13 sh -c 'strings /home/ctf/checker | grep -q "SSL{" && exit 1 || exit 0'
+docker run --rm linux-ctf/t13 sh -c 'key=$(/home/ctf/checker open-sesame | tail -n1); cd /home/ctf && ./decrypt.sh "$key"'
+docker run --rm linux-ctf/t13 grep -rq 'SSL{' /home /opt /etc /usr && exit 1 || exit 0
 ```
 
-Проверяется: файл существует, первый уровень — hex от `The flag is: ...`,
-второй уровень — Base64, декодируется до флага.
+Проверяется: файл исполняемый, пароль виден в строках, верный пароль
+выдаёт ключ, `./decrypt.sh` даёт нужный флаг, а открытого флага нигде нет.

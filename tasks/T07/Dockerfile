@@ -1,8 +1,14 @@
-# T07 "Где лежит флаг?" -- поиск файлов командой find.
-FROM linux-ctf/base:latest
+# T07 "Где лежит ключ?" -- поиск файлов командой find.
+#
+# Состояние готовится на этапе сборки (stage prep); в финальный образ
+# попадает только каталог /stage.  Внутри контейнера setup-скрипта нет.
+FROM linux-ctf/buildtools:latest AS prep
+WORKDIR /prep
+COPY prepare.sh /prep/prepare.sh
+RUN STAGE=/stage bash /prep/prepare.sh
 
-COPY setup.sh /opt/setup.sh
-RUN chmod 0755 /opt/setup.sh
+FROM linux-ctf/base:latest
+COPY --from=prep /stage/ /
 
 ENV START_DIR=/home/ctf
 WORKDIR /home/ctf

@@ -1,76 +1,78 @@
-# T12. Матрешка
+# T12. Что это вообще?
 
-**Тема:** вложенные архивы · **Сложность:** 🟡 · **Время:** 6–10 минут
+**Тема:** типы файлов · **Сложность:** 🟢 · **Время:** 5–7 минут
 
 ## Условие для студента
 
-> В домашнем каталоге лежит файл `challenge` **без расширения**. Он
-> получился в результате архивации, внутри которой спрятан ещё один
-> архив, а в нём — третий уровень с флагом.
+> В домашнем каталоге лежит файл `mystery`. Он не похож на обычный
+> текст, и открыть его редактором не получится.
 >
-> Разберите матрёшку и доберитесь до флага.
+> Разберитесь, что это за файл, и найдите внутри него **ключ** — это
+> случайная hex-строка.  Затем расшифруйте настоящий флаг:
+>
+> ```bash
+> ./decrypt.sh <ключ>
+> ```
 
-Имя файла известно.
+Формат флага: `SSL{...}`.  Сам флаг в образе лежит только в
+зашифрованном виде (`flag.enc`), а ключ спрятан в задаче.
 
 ## Состояние контейнера
 
 ```text
 /home/ctf/
-└── challenge   # gzip(stage1.tar)  [без расширения]
-        └── stage1.tar
-                └── stage2.zip
-                        └── flag.txt   <- флаг
+├── mystery            <- исполняемый ELF, внутри открытым текстом ключ
+├── flag.enc           <- флаг, XOR-зашифрованный случайным ключом
+├── decrypt.sh         <- ./decrypt.sh <ключ>
+└── README
 ```
 
-Пользователь: `ctf`, cwd: `/home/ctf`.
+Пользователь: `ctf`, cwd: `/home/ctf`.  Файл `mystery` исполняемый
+(0755), владелец `ctf`.  Внутри бинарника, помимо ключа, лежат
+строки-приманки, поэтому «первая попавшаяся» hex-строка может быть
+ложной.
 
 ## Флаг
 
 ```text
-flag{archives_in_archives}
+SSL{strings_are_useful}
 ```
 
-Переопределяется переменной `TASK_FLAG`.
+Ключ шифрования генерируется случайно на этапе сборки и в открытом виде
+в клетке задачи не хранится — его получают через `strings`.
 
 ## Ожидаемые навыки
 
-`file`, `gunzip`/`gzip -d`, `tar`, `unzip`.
+`file`, `strings`, базовое представление об исполняемых файлах ELF и
+двоичных данных.
 
 ## Подсказки
 
-1. Начните с `file challenge` — отсутствие расширения не мешает
-   определить формат по содержимому.
-2. Это gzip-поток. Разожмите его в файл и снова проверьте `file` —
-   получится tar-архив. Посмотрите список файлов через `tar -tf`.
-3. На каждом уровне повторяйте `file`, пока не дойдёте до `flag.txt`.
+1. Сначала определите тип файла — например, командой `file`.
+2. Если это исполняемый файл, поищите внутри него читаемые строки:
+   подойдёт утилита `strings`.
+3. Ключ — это ровно 32 символа из набора `0..9a..f`.  Отфильтруйте вывод
+   (например, `strings mystery | grep -E '^[0-9a-f]{32}$'`).
 
 ## Решение
 
 ```bash
-cd /home/ctf
-file challenge                       # gzip compressed data
-gzip -dc challenge > stage1.tar
-file stage1.tar                      # POSIX tar archive
-tar -xf stage1.tar                   # появляется stage2.zip
-file stage2.zip                      # Zip archive
-unzip stage2.zip                     # появляется flag.txt
-cat flag.txt
+file mystery
+strings mystery | grep -E '^[0-9a-f]{32}$'
+# <ключ>
+./decrypt.sh <ключ>
+# SSL{strings_are_useful}
 ```
 
 ## Smoke test
 
 ```bash
-docker run --rm linux-ctf/t12 test -f /home/ctf/challenge
-docker run --rm linux-ctf/t12 bash -c \
-    'file -b /home/ctf/challenge | grep -qi gzip'
-docker run --rm linux-ctf/t12 bash -c '
-    set -e
-    cd "$(mktemp -d)"
-    gzip -dc /home/ctf/challenge > stage1.tar
-    tar -xf stage1.tar
-    unzip -q stage2.zip
-    grep -q "flag{" flag.txt'
+docker run --rm linux-ctf/t12 test -x /home/ctf/mystery
+docker run --rm linux-ctf/t12 sh -c 'file /home/ctf/mystery | grep -q ELF'
+docker run --rm linux-ctf/t12 sh -c 'key=$(strings /home/ctf/mystery | grep -E "^[0-9a-f]{32}$" | head -n1); cd /home/ctf && ./decrypt.sh "$key"'
+docker run --rm linux-ctf/t12 grep -rq 'SSL{' /home /opt /etc /usr && exit 1 || exit 0
 ```
 
-Проверяется: файл существует, верхний уровень — gzip, и вся цепочка
-`gzip -> tar -> zip` распаковывается до `flag.txt` с флагом.
+Проверяется: файл исполняемый и является ELF, ключ находится штатным
+образом через `strings`, `./decrypt.sh` даёт нужный флаг, а плейнтекстового
+флага нигде нет.

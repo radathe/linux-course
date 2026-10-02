@@ -1,8 +1,14 @@
-# T10 "Запусти программу" -- право на выполнение (chmod u+x).
-FROM linux-ctf/base:latest
+# T10 "Что внутри?" -- работа с zip-архивом.
+#
+# Архив собирается на этапе сборки в stage prep, поэтому ключ лежит внутри
+# сжатого файла и не находится простым grep по образу.
+FROM linux-ctf/buildtools:latest AS prep
+WORKDIR /prep
+COPY prepare.sh /prep/prepare.sh
+RUN STAGE=/stage bash /prep/prepare.sh
 
-COPY setup.sh /opt/setup.sh
-RUN chmod 0755 /opt/setup.sh
+FROM linux-ctf/base:latest
+COPY --from=prep /stage/ /
 
 ENV START_DIR=/home/ctf
 WORKDIR /home/ctf

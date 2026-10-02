@@ -1,14 +1,8 @@
-# base-linux-ctf -- общий базовый образ для практикума Linux/CTF.
+# base-linux-ctf -- общий базовый образ практикума.
 #
-# Образ содержит набор утилит, изучаемых в курсе, и непривилегированного
-# пользователя ctf.  Задачи наследуются от него:
-#
-#     FROM linux-ctf/base:latest
-#
-# Сборка:
-#
-#     docker build -t linux-ctf/base:latest base
-#
+# Задачи готовятся на этапе сборки (multi-stage), поэтому во время запуска
+# контейнера никакой скрипт инициализации не выполняется.  Base отвечает
+# только за инструменты, пользователя ctf и сброс привилегий.
 FROM debian:bookworm-slim
 
 LABEL org.opencontainers.image.title="base-linux-ctf" \
@@ -18,7 +12,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
-# Утилиты, которые должны быть доступны студенту в большинстве задач.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         bash \
@@ -33,29 +26,20 @@ RUN apt-get update \
         python3 ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Непривилегированный пользователь, от имени которого работает студент.
 RUN useradd --create-home --uid 1000 --shell /bin/bash ctf \
     && chmod 0755 /home/ctf
 
-# Приветственный баннер с подсказкой про доступные инструменты.
 RUN printf '%s\n' \
-    '[base-linux-ctf] Осмотритесь: pwd, ls, cat, grep, find, file, strings ...' \
+    '[base-linux-ctf] Осмотритесь: pwd, ls, cat, grep, find, file ...' \
     > /etc/motd
 
-# Утилита инъекции флага в бинарные файлы во время запуска контейнера.
-# Позволяет не хранить реальный флаг в образе: в бинарник зашит только
-# безобидный плейсхолдер, который заменяется при старте контейнера.
-COPY patch_flag.py /usr/local/bin/patch_flag.py
-RUN chmod 0755 /usr/local/bin/patch_flag.py
-
-# Runtime-entrypoint: setup -> сервисы -> сброс привилегий -> shell.
+# Точка входа: при необходимости запускает фоновые процессы задачи
+# (/opt/start) и сбрасывает привилегии до ctf.
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 0755 /usr/local/bin/entrypoint.sh
 
-# Каталог для runtime-инициализации задачи и логов сервисов.
 RUN mkdir -p /opt /var/log
 
-# Стартовый каталог задачи (задачи могут переопределять через ENV).
 ENV START_DIR=/home/ctf
 WORKDIR /home/ctf
 

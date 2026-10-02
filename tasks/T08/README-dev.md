@@ -1,77 +1,109 @@
-# T08. Большая уборка
+# T08. Чужой файл
 
-**Тема:** поиск файлов · **Сложность:** 🟢 · **Время:** 5–8 минут
+**Тема:** права доступа и группы · **Сложность:** 🟡 · **Время:** 6–10 минут
 
 ## Условие для студента
 
-> В каталоге `/opt/data` накопился беспорядок: десятки мелких файлов
-> разных типов, большие бинарные файлы и большие текстовые отчёты.
+> Флаг задачи зашифрован и лежит в файле `flag.enc` в вашем домашнем
+> каталоге. Рядом — скрипт `decrypt.sh` и файл `README`.
 >
-> Найдите **единственный** текстовый файл (`.txt`), размер которого
-> **больше 10 КБ** и в котором встречается слово `TARGET`. Внутри него
-> лежит флаг.
+> Чтобы расшифровать флаг, сначала нужно найти **ключ**: случайную
+> hex-строку из 32 символов. Ключ лежит в файле `/opt/data/secret.txt`,
+> который вам не принадлежит. Читать его разрешено группе `analysts`.
+>
+> Получите ключ, затем выполните:
+>
+> ```bash
+> ./decrypt.sh <ключ>
+> ```
 
-Имя файла не сообщается.
+Повышать привилегии не нужно.
 
 ## Состояние контейнера
 
 ```text
+/home/ctf/
+├── flag.enc          # зашифрованный флаг
+├── decrypt.sh        # ./decrypt.sh <ключ>
+├── README
+└── hint.txt          # подсказка
+
 /opt/data/
-├── file_001.txt … file_075.sh   # ~75 маленьких файлов разных типов
-├── big_binary_1.bin … .3.bin    # большие бинарные файлы (~20 КБ)
-├── report_draft_1.txt           # большой .txt без TARGET (> 10 КБ)
-├── report_draft_2.txt           # большой .txt без TARGET (> 10 КБ)
-└── otchet_cleanup.txt           # <- нужный файл: .txt, > 10 КБ, TARGET
+├── secret.txt   # root:analysts, права 640, содержит ключ
+├── draft.txt    # отвлекающий
+├── todo.txt     # отвлекающий
+└── stats.txt    # отвлекающий
 ```
 
-Пользователь: `ctf`, cwd: `/home/ctf`. Каталог `/opt/data` доступен на
-чтение всем.
+Пользователь `ctf` **числится** в группе `analysts` в `/etc/group`, но
+стартовый shell запускается без неё. Поэтому сразу `cat` не работает:
+группу нужно активировать в текущей сессии. Повышения привилегий
+(владельца/`sudo`) это не требует — группа уже принадлежит `ctf`.
 
 ## Флаг
 
 ```text
-flag{find_cleanup}
+SSL{groups_matter}
 ```
 
-Переопределяется переменной `TASK_FLAG`.
+Флаг не хранится в образе открытым текстом: он XOR-зашифрован
+случайным ключом в `flag.enc`.  Ключ печатается в stdout на этапе
+сборки и кладётся в `/opt/data/secret.txt`.
 
 ## Ожидаемые навыки
 
-`find -type f -name "*.txt" -size +10k`, `grep -l`, `xargs`.
+`id`, `groups`, `getent group`, `ls -l`, `sg`, `newgrp`, `grep`.
 
 ## Подсказки
 
-1. Сначала отбросьте всё, что не является текстом: условие явно
-   ограничивает тип файла расширением `.txt`.
-2. У `find` есть фильтр по размеру: `-size +10k` отберёт файлы больше
-   10 КБ. Осталось проверить содержимое через `grep -l`.
-3. Чтобы передать найденные файлы в `grep`, удобно использовать
-   `-exec ... {} +` или `xargs`.
+1. Посмотрите на владельца и права файла:
+   `ls -l /opt/data/secret.txt`. Триада `640` означает чтение для
+   владельца и для группы.
+2. Проверьте членство: `id`, `groups`, `getent group analysts`.
+   В `/etc/group` вы состоите в `analysts`, но текущая сессия её не
+   имеет.
+3. Группу можно активировать командой `sg analysts` или
+   `newgrp analysts` (пароль не потребуется, так как вы уже участник
+   группы).
+4. Подсказка также лежит в `~/hint.txt`.
 
 ## Решение
 
 ```bash
-# Кандидаты: .txt, больше 10 КБ.
-find /opt/data -type f -name '*.txt' -size +10k
+ls -l /opt/data/secret.txt        # root analysts ... -rw-r-----
+getent group analysts             # analysts:x:2000:ctf
+id                                # в сессии analysts пока нет
+cat /opt/data/secret.txt          # Permission denied
 
-# Среди них -- содержащие TARGET (он должен быть один).
-find /opt/data -type f -name '*.txt' -size +10k -exec grep -l TARGET {} +
+sg analysts -c 'grep -oE "[0-9a-f]{32}" /opt/data/secret.txt'
+# <ключ>
 
-# Читаем найденный отчёт.
-grep -h 'flag{' /opt/data/otchet_cleanup.txt
+cd ~
+./decrypt.sh <ключ>
+# SSL{groups_matter}
+```
+
+Либо через новую сессию:
+
+```bash
+newgrp analysts
+cat /opt/data/secret.txt
+exit
 ```
 
 ## Smoke test
 
 ```bash
-docker run --rm linux-ctf/t08 test -d /opt/data
+docker run --rm linux-ctf/t08 bash -c 'getent group analysts | grep -qw ctf'
+docker run --rm linux-ctf/t08 bash -c 'test "$(stat -c %U:%G /opt/data/secret.txt)" = "root:analysts"'
+docker run --rm linux-ctf/t08 bash -c 'test "$(stat -c %a /opt/data/secret.txt)" = "640"'
+docker run --rm linux-ctf/t08 bash -c 'cat /opt/data/secret.txt && exit 1 || exit 0'
 docker run --rm linux-ctf/t08 bash -c \
-    'test "$(find /opt/data -type f -name "*.txt" -size +10k | wc -l)" -ge 1'
-docker run --rm linux-ctf/t08 bash -c \
-    'test "$(find /opt/data -type f -name "*.txt" -size +10k -exec grep -l TARGET {} + | wc -l)" -eq 1'
-docker run --rm linux-ctf/t08 bash -c \
-    'find /opt/data -type f -name "*.txt" -size +10k -exec grep -l TARGET {} + | xargs grep -q "flag{"'
+  'k=$(sg analysts -c "grep -oE \"[0-9a-f]{32}\" /opt/data/secret.txt"); /home/ctf/decrypt.sh "$k" | grep -q "SSL{groups_matter}"'
+docker run --rm linux-ctf/t08 bash -c 'grep -rn "SSL{" /home /opt /etc /usr 2>/dev/null && exit 1 || exit 0'
 ```
 
-Проверяется: каталог существует, есть хотя бы один большой `.txt`,
-подходящий файл ровно один и в нём лежит флаг.
+Проверяется: `ctf` числится в группе `analysts` (GID 2000), файл
+существует с владельцем `root:analysts` и правами `640`, напрямую не
+читается, но ключ доступен после активации группы (`sg`/`newgrp`), и
+подходит к `flag.enc`.

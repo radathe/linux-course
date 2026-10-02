@@ -1,62 +1,85 @@
-# T11. Что внутри?
+# T11. Испорченное сообщение
 
-**Тема:** архивы · **Сложность:** 🟢 · **Время:** 3–5 минут
+**Тема:** данные и кодирование · **Сложность:** 🟢 · **Время:** 5–7 минут
 
 ## Условие для студента
 
-> В вашем домашнем каталоге лежит архив `backup.zip`. Внутри — несколько
-> файлов, один из которых содержит флаг.
+> Флаг задачи зашифрован и лежит в файле `flag.enc` в вашем домашнем
+> каталоге. Рядом — скрипт `decrypt.sh` и файл `README`.
 >
-> Распакуйте архив и найдите флаг.
-
-Имя архива известно.
+> Чтобы расшифровать флаг, сначала нужно найти **ключ**: случайную
+> hex-строку из 32 символов.
+>
+> Ключ лежит в файле `message.txt`, но записан не как обычный текст:
+> его содержимое — сплошная строка латинских букв, цифр и знаков `=`.
+> Восстановите исходное значение, затем выполните:
+>
+> ```bash
+> ./decrypt.sh <ключ>
+> ```
 
 ## Состояние контейнера
 
 ```text
 /home/ctf/
-└── backup.zip   # zip-архив: notes.txt, todo.txt, flag.txt (флаг)
+├── message.txt        # ключ, записанный в текстовом (кодированном) виде
+├── flag.enc           # зашифрованный флаг
+├── decrypt.sh         # ./decrypt.sh <ключ>
+└── README
 ```
 
-Пользователь: `ctf`, cwd: `/home/ctf`.
+Пользователь: `ctf`, cwd: `/home/ctf`. Файл доступен на чтение всем.
 
 ## Флаг
 
 ```text
-flag{zip_basics}
+SSL{base64_secret}
 ```
 
-Переопределяется переменной `TASK_FLAG`.
+Флаг не хранится в образе открытым текстом: он XOR-зашифрован
+случайным ключом в `flag.enc`.  Ключ печатается в stdout на этапе
+сборки и кодируется в `message.txt`.
 
 ## Ожидаемые навыки
 
-`file`, `unzip -l`, `unzip`, `cat`.
+`cat`, распознавание кодированного текста, `base64 -d`, `grep`.
 
 ## Подсказки
 
-1. Содержимое архива можно посмотреть, не распаковывая:
-   `unzip -l backup.zip`.
-2. Для распаковки используйте `unzip backup.zip` (при необходимости
-   с `-d`, чтобы выбрать каталог).
+1. Посмотрите на набор символов в `message.txt`: он выглядит как
+   стандартное текстовое представление двоичных данных.
+2. Это обратимое преобразование — существует утилита, которая
+   декодирует такой текст обратно.
+3. Декодируйте файл и извлеките из результата hex-строку из 32
+   символов (например, через `grep -oE`).
 
 ## Решение
 
 ```bash
-file backup.zip
-unzip -l backup.zip
-unzip backup.zip
-cat flag.txt
+cat message.txt
+base64 -d message.txt
+# <ключ>
+
+cd ~
+./decrypt.sh <ключ>
+# SSL{base64_secret}
+```
+
+Либо одной командой:
+
+```bash
+./decrypt.sh "$(base64 -d message.txt | grep -oE '[0-9a-f]{32}')"
 ```
 
 ## Smoke test
 
 ```bash
-docker run --rm linux-ctf/t11 test -f /home/ctf/backup.zip
+docker run --rm linux-ctf/t11 test -f /home/ctf/message.txt
 docker run --rm linux-ctf/t11 bash -c \
-    'unzip -l /home/ctf/backup.zip | grep -q flag.txt'
-docker run --rm linux-ctf/t11 bash -c \
-    'cd "$(mktemp -d)" && unzip -q /home/ctf/backup.zip && grep -q "flag{" flag.txt'
+  'k=$(base64 -d /home/ctf/message.txt); /home/ctf/decrypt.sh "$k" | grep -q "SSL{base64_secret}"'
+docker run --rm linux-ctf/t11 bash -c 'grep -rn "SSL{" /home /opt /etc /usr 2>/dev/null && exit 1 || exit 0'
+docker run --rm linux-ctf/t11 id -un
 ```
 
-Проверяется: архив на месте и является zip, внутри есть `flag.txt`
-с флагом.
+Проверяется: файл существует, декодируется в ключ, ключ подходит к
+`flag.enc`, а пользователь — `ctf`.

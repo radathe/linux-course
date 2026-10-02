@@ -6,27 +6,38 @@
 
 > В файле `server.log` записаны события сервера.
 >
-> Среди них есть строка уровня `ERROR`, содержащая флаг.
+> Среди них есть ровно одна строка уровня `ERROR`, содержащая ключ:
+> `[ERROR] <ключ>`, где `<ключ>` — hex-строка из 32 символов.
 >
-> Найдите её и определите номер строки в файле.
+> Найдите её и определите номер строки в файле, а затем расшифруйте флаг:
+>
+> ```bash
+> cd /home/ctf
+> ./decrypt.sh <ключ>
+> ```
 
 ## Состояние контейнера
 
 ```text
 /home/ctf/
-└── server.log         <- 2000+ строк INFO/WARN/ERROR
+├── server.log         <- 2000+ строк INFO/WARN/ERROR
+├── flag.enc           <- зашифрованный флаг
+├── decrypt.sh         <- ./decrypt.sh <ключ>
+└── README
 ```
 
 Пользователь: `ctf`, cwd: `/home/ctf`.
-Ровно одна строка содержит флаг и уровень `[ERROR]`.
+Ровно одна строка содержит ключ и уровень `[ERROR]`; остальные строки —
+обычные записи `INFO`/`WARN`/`ERROR`.
 
 ## Флаг
 
 ```text
-flag{log_search}
+SSL{log_search}
 ```
 
-Переопределяется переменной `TASK_FLAG`.
+Флаг хранится в `flag.enc` в зашифрованном виде и становится виден
+только после `./decrypt.sh <ключ>`.  Открытым текстом в образе его нет.
 
 ## Ожидаемые навыки
 
@@ -35,31 +46,48 @@ flag{log_search}
 ## Подсказки
 
 1. В журнале тысячи строк — открывать его целиком неудобно.
-2. Отфильтруйте строки уровня `ERROR` и поищите строку с флагом вида
-   `flag{...}`.
-3. Флаг лежит в единственной строке, где уровень и флаг стоят рядом:
-   `[ERROR] flag{...}`.
+2. Отфильтруйте строки уровня `ERROR`.
+3. Нужная строка — единственная, где `[ERROR]` стоит рядом с
+   hex-строкой из 32 символов.  Номер строки подскажет `grep -n`.
 
 ## Решение
 
 ```bash
 wc -l server.log
-grep -n 'flag{' server.log
+grep -nE '^\[ERROR\] [0-9a-f]{32}$' server.log
+# например: 1234:[ERROR] <ключ>
+cd /home/ctf
+./decrypt.sh <ключ>        # печатает SSL{log_search}
 ```
 
 Либо по уровню:
 
 ```bash
-grep '\[ERROR\]' server.log | grep 'flag{'
+grep '\[ERROR\]' server.log | grep -E '[0-9a-f]{32}'
 ```
 
 ## Smoke test
 
 ```bash
-docker run --rm linux-ctf/t05 id -u
-docker run --rm linux-ctf/t05 bash -c 'test $(wc -l < /home/ctf/server.log) -ge 2000'
-docker run --rm linux-ctf/t05 bash -c '[ "$(grep -c "\[ERROR\] flag{" /home/ctf/server.log)" = 1 ]'
+# не менее 2000 строк
+docker run --rm linux-ctf/t05 bash -c \
+  'test "$(wc -l < /home/ctf/server.log)" -ge 2000'
+
+# ровно одна строка [ERROR] <hex>
+docker run --rm linux-ctf/t05 bash -c \
+  '[ "$(grep -cE "^\[ERROR\] [0-9a-f]{32}$" /home/ctf/server.log)" = 1 ]'
+
+# в образе нет открытого флага
+docker run --rm linux-ctf/t05 bash -c \
+  '! grep -rq "SSL{" /home /opt /etc /usr 2>/dev/null'
+
+# ключ находится и расшифровывает флаг
+docker run --rm linux-ctf/t05 bash -c \
+  'cd /home/ctf && ./decrypt.sh \
+     "$(grep -E "^\[ERROR\] [0-9a-f]{32}$" server.log | awk "{print \$2}")"' \
+  | grep -qx 'SSL{log_search}'
 ```
 
-Проверяется: журнал содержит не менее 2000 строк и ровно одну строку
-`[ERROR] flag{...}`.
+Проверяется: журнал содержит не менее 2000 строк, ровно одну строку
+`[ERROR] <hex>`, открытого флага в образе нет, а `./decrypt.sh` с
+найденным ключом печатает `SSL{log_search}`.

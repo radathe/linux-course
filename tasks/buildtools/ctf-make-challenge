@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""Подготовка зашифрованного флага для задачи (только на этапе сборки).
+
+    ctf-make-challenge <флаг> <каталог-stage>
+
+Создаёт в <stage>/home/ctf файлы:
+    flag.enc   -- флаг, XOR-зашифрованный случайным ключом (hex);
+    decrypt.sh -- скрипт расшифровки (принимает ключ аргументом);
+    README     -- краткое пояснение для студента;
+
+а в stdout печатает случайный hex-ключ (16 байт).  Ключ затем прячется в
+задаче согласно её теме.
+"""
+
+import os
+import secrets
+import sys
+
+DECRYPT = r'''#!/bin/bash
+# Расшифровка флага: ./decrypt.sh <ключ>
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+key="${1:-}"
+if [ -z "$key" ]; then
+    echo "Использование: $0 <ключ>" >&2
+    exit 2
+fi
+python3 - "$here/flag.enc" "$key" <<'PY'
+import sys
+enc = bytes.fromhex(open(sys.argv[1]).read().strip())
+key = bytes.fromhex(sys.argv[2].strip())
+out = bytes(b ^ key[i % len(key)] for i, b in enumerate(enc))
+sys.stdout.buffer.write(out + b"\n")
+PY
+'''
+
+README = '''Флаг зашифрован
+===============
+
+Настоящий флаг лежит в файле flag.enc в зашифрованном виде.
+Ключ (случайная hex-строка) спрятан в системе — его нужно найти.
+
+Когда найдёте ключ, выполните:
+
+    ./decrypt.sh <ключ>
+'''
+
+
+def main(argv):
+    if len(argv) != 2:
+        print("usage: ctf-make-challenge <flag> <stage-dir>", file=sys.stderr)
+        return 2
+
+    flag = argv[0].encode()
+    stage = argv[1]
+    home = os.path.join(stage, "home", "ctf")
+    os.makedirs(home, exist_ok=True)
+
+    key = secrets.token_bytes(16)
+    enc = bytes(byte ^ key[i % len(key)] for i, byte in enumerate(flag))
+
+    with open(os.path.join(home, "flag.enc"), "w", encoding="utf-8") as fh:
+        fh.write(enc.hex() + "\n")
+
+    decrypt = os.path.join(home, "decrypt.sh")
+    with open(decrypt, "w", encoding="utf-8") as fh:
+        fh.write(DECRYPT)
+    os.chmod(decrypt, 0o755)
+
+    readme = os.path.join(home, "README")
+    with open(readme, "w", encoding="utf-8") as fh:
+        fh.write(README)
+    os.chmod(readme, 0o644)
+
+    sys.stdout.write(key.hex())
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

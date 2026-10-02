@@ -1,8 +1,15 @@
-# T13 "Hex or Base64?" -- декодирование hex и base64.
-FROM linux-ctf/base:latest
+# T13 "Странная программа" -- анализ бинарника и поиск пароля.
+#
+# Состояние готовится на этапе сборки (stage prep): бинарник компилируется
+# там же, где генерируется ключ, поэтому в финальный образ попадают только
+# готовые файлы.  Никакого setup-скрипта внутри нет.
+FROM linux-ctf/buildtools:latest AS prep
+WORKDIR /prep
+COPY prepare.sh /prep/prepare.sh
+RUN STAGE=/stage bash /prep/prepare.sh
 
-COPY setup.sh /opt/setup.sh
-RUN chmod 0755 /opt/setup.sh
+FROM linux-ctf/base:latest
+COPY --from=prep /stage/ /
 
 ENV START_DIR=/home/ctf
 WORKDIR /home/ctf

@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+"""XOR hex-строки с байтом (этап сборки).
+
+    ctf-xor <hex-строка> [байт-в-hex]
+
+Печатает результат в hex без перевода строки.  Используется, чтобы
+зашифровать ключ перед зашивкой в бинарник.
+"""
+
+import sys
+
+
+def main(argv):
+    if len(argv) < 1:
+        print("usage: ctf-xor <hex> [byte]", file=sys.stderr)
+        return 2
+
+    data = bytes.fromhex(argv[0])
+    byte = int(argv[1], 16) if len(argv) > 1 else 0x5A
+    sys.stdout.write(bytes(b ^ byte for b in data).hex())
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

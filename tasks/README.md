@@ -1,101 +1,91 @@
 # Практикум Linux/CTF в Docker
 
 Набор изолированных практических заданий по Linux для вводного курса по
-информационной безопасности.  Каждая задача — отдельный Docker-образ и
-отдельный контейнер.  Студент получает непривилегированный shell
-пользователя `ctf` и решает задачу, исследуя файловую систему, процессы,
-сервисы и т. п.
+информационной безопасности.  Каждой задаче соответствует **свой
+Docker-образ**.  Студент получает непривилегированный shell пользователя
+`ctf` и решает задачу, исследуя файловую систему, права, архивы,
+бинарники, процессы и потоки ввода-вывода.
 
-> Здесь находятся **только исходники** задач: Dockerfile, скрипты
-> инициализации и вспомогательные файлы.  Готовые образы собираются
-> командой `docker build`/`make` (см. ниже).
+> Здесь — **только исходники**.  Образы собираются локально командами
+> `make`/`docker build`.
+
+Инструкция для студентов по загрузке и запуску готовых образов —
+[`STUDENT-GUIDE.md`](STUDENT-GUIDE.md).
+
+## Как устроены задачи
+
+* Состояние задачи готовится **на этапе сборки** (multi-stage), а не при
+  запуске контейнера.  Внутри образа **нет** `setup.sh` и любого другого
+  скрипта инициализации.
+* Настоящий флаг **не хранится в образе в открытом виде**.  Он
+  XOR-шифруется случайным ключом; в `/home/ctf` лежат:
+  * `flag.enc` — зашифрованный флаг;
+  * `decrypt.sh` — расшифровка: `./decrypt.sh <ключ>`;
+  * `README` — пояснение.
+* **Ключ** (случайная hex-строка) спрятан в задаче так, что его находят
+  с помощью изучаемого навыка (`grep`, `find`, `strings`, `unzip`,
+  `chmod`, `ps`, перенаправление `stderr` и т. д.).
+
+Поэтому `grep -r 'SSL{' /` ничего не находит, а открыть «скрипт
+инициализации» невозможно — его нет.
+
+Подробности и шаблоны — в [`AUTHORING.md`](AUTHORING.md).
 
 ## Структура
 
 ```text
 tasks/
-├── base/            # общий базовый образ linux-ctf/base
-│   ├── Dockerfile
-│   ├── entrypoint.sh
-│   └── patch_flag.py
-├── tools/           # общий образ с ELF-бинарниками linux-ctf/tools
-│   ├── Dockerfile
-│   └── src/
-├── T01/ ... T26/    # задачи практикума
-├── D01/             # отдельная локальная задача по Docker
-├── tests/           # smoke-тесты
+├── base/            # linux-ctf/base: инструменты, пользователь ctf, entrypoint
+├── buildtools/      # linux-ctf/buildtools: gcc + генератор зашифрованного флага
+│   ├── ctf-make-challenge
+│   ├── ctf-xor
+│   └── src/         # C-исходники вспомогательных программ
+├── T01/ … T15/      # задачи (Dockerfile, prepare.sh, README-dev.md)
+├── tests/smoke.sh
 ├── Makefile
 └── README.md
 ```
 
-Типовая задача:
-
-```text
-Txx/
-├── Dockerfile       # сборка образа (FROM linux-ctf/base или linux-ctf/tools)
-├── setup.sh         # runtime-инициализация: файлы, права, генерация флага
-├── start-services.sh# (опционально) запуск фоновых сервисов/процессов
-├── files/           # (опционально) статические файлы
-├── scripts/         # (опционально) вспомогательные программы
-└── README-dev.md    # условие, флаг, подсказки, решение, smoke test
-```
-
 ## Список задач
 
-| ID  | Название               | Тема                    | Флаг по умолчанию |
-|-----|------------------------|-------------------------|-------------------|
-| T01 | Осмотр комнаты         | файловая система        | `flag{first_linux_steps}` |
-| T02 | Скрытая записка        | скрытые файлы           | `flag{hidden_note}` |
-| T03 | Запутанный путь        | пути, `.` и `..`        | `flag{relative_paths}` |
-| T04 | Нужная строка          | grep                    | `flag{grep_basics}` |
-| T05 | Большой журнал         | grep -n                 | `flag{log_search}` |
-| T06 | Лишние данные          | sort / uniq / cut       | `flag{text_pipeline}` |
-| T07 | Где лежит флаг?        | find                    | `flag{find_it}` |
-| T08 | Большая уборка         | find по свойствам       | `flag{find_cleanup}` |
-| T09 | Чужой файл             | группы и права          | `flag{groups_matter}` |
-| T10 | Запусти программу      | chmod, бит `x`          | `flag{execution_permission}` |
-| T11 | Что внутри?            | zip                     | `flag{zip_basics}` |
-| T12 | Матрешка               | вложенные архивы        | `flag{archives_in_archives}` |
-| T13 | Hex or Base64?         | hex + base64            | `flag{hex_and_base64}` |
-| T14 | Испорченное сообщение  | распознавание base64    | `flag{base64_secret}` |
-| T15 | Что это вообще?        | file, strings           | `flag{strings_are_useful}` |
-| T16 | Странная программа     | strings + запуск        | `flag{simple_reverse}` |
-| T17 | Первый скрипт          | bash-скрипт             | `flag{bash_scripting}` |
-| T18 | Автоматизируй поиск    | циклы и условия         | `flag{automation}` |
-| T19 | Что здесь работает?    | процессы и аргументы    | `flag{process_argument}` |
-| T20 | Секрет процесса        | переменные окружения    | `flag{environment_secret}` |
-| T21 | Где настоящий вывод?   | stdout / stderr         | `flag{stderr_is_a_stream}` |
-| T22 | Обработай поток        | конвейеры               | `flag{stream_processing}` |
-| T23 | Подключись к сервису   | nc                      | `flag{netcat_basics}` |
-| T24 | Исследуй веб-сервис    | curl, редиректы         | `flag{curl_basics}` |
-| T25 | Неправильный заголовок | HTTP-заголовки          | `flag{custom_headers}` |
-| T26 | Маленький Linux CTF    | итоговая                | `flag{linux_ctf_basics_are_easier_together_ok}` |
-| D01 | Собери окружение       | Docker (локально)       | `flag{docker_complete}` |
+| ID  | Название               | Тема                     | Флаг по умолчанию            |
+|-----|------------------------|--------------------------|------------------------------|
+| T01 | Осмотр комнаты         | файловая система         | `SSL{first_linux_steps}`     |
+| T02 | Скрытая записка        | скрытые файлы            | `SSL{hidden_note}`           |
+| T03 | Запутанный путь        | пути, `.` и `..`         | `SSL{relative_paths}`        |
+| T04 | Нужная строка          | grep                     | `SSL{grep_basics}`           |
+| T05 | Большой журнал         | grep -n                  | `SSL{log_search}`            |
+| T06 | Лишние данные          | cut / sort / uniq        | `SSL{text_pipeline}`         |
+| T07 | Где лежит ключ?        | find                     | `SSL{find_it}`               |
+| T08 | Чужой файл             | группы и права           | `SSL{groups_matter}`         |
+| T09 | Запусти программу      | chmod, бит `x`           | `SSL{execution_permission}`  |
+| T10 | Что внутри?            | zip                      | `SSL{zip_basics}`            |
+| T11 | Испорченное сообщение  | распознавание base64     | `SSL{base64_secret}`         |
+| T12 | Что это вообще?        | file, strings            | `SSL{strings_are_useful}`    |
+| T13 | Странная программа     | strings + запуск         | `SSL{simple_reverse}`        |
+| T14 | Что здесь работает?    | процессы и аргументы     | `SSL{process_argument}`      |
+| T15 | Где настоящий вывод?   | stdout / stderr          | `SSL{stderr_is_a_stream}`    |
 
-`D01` — отдельная локальная практика: готового challenge-образа нет, его
-собирает сам студент из `D01/challenge/`. Поэтому в `Makefile` задача
-`D01` не входит, а её эталонное решение лежит в `D01/solution/Dockerfile`.
+Флаги в таблице — ожидаемые ответы (для проверки платформой).  В самих
+образах их нет: там только `flag.enc`, зашифрованный случайным ключом.
 
 ## Сборка
-
-Сначала собираются базовые образы, затем задачи.
 
 ```bash
 cd tasks
 
-make base          # docker build -t linux-ctf/base:latest base
-make tools         # docker build -t linux-ctf/tools:latest tools
-
-make T01           # docker build -t linux-ctf/t01 T01
-make all           # собрать всё (base + tools + все задачи)
+make base          # linux-ctf/base
+make buildtools    # linux-ctf/buildtools (нужен задачам на этапе сборки)
+make T01           # linux-ctf/t01
+make all           # base + buildtools + все задачи
 ```
 
-Каждую задачу можно собрать и вручную:
+Вручную:
 
 ```bash
-docker build -t linux-ctf/base:latest  base
-docker build -t linux-ctf/tools:latest tools
-docker build -t linux-ctf/t01          T01
+docker build -t linux-ctf/base:latest        base
+docker build -t linux-ctf/buildtools:latest  buildtools
+docker build -t linux-ctf/t01                T01
 ```
 
 ## Запуск
@@ -104,61 +94,36 @@ docker build -t linux-ctf/t01          T01
 docker run --rm -it linux-ctf/t01
 ```
 
-Студент сразу попадает в рабочий каталог задачи (обычно `/home/ctf`).
-Кнопка/механика «перезапустить задачу» — это просто создание нового
-контейнера: состояние инициализируется заново.
+Студент попадает в рабочий каталог задачи (обычно `/home/ctf`).
+«Перезапустить задачу» — создать новый контейнер.
 
-Рекомендуемые ограничения (учебная платформа выставляет их сама):
+Рекомендуемые ограничения:
 
 ```bash
 docker run --rm -it \
     --memory=256m --cpus=0.5 --pids-limit=256 \
     --network=none \
-    --security-opt=no-new-privileges \
     linux-ctf/t01
 ```
 
-`--network=none` оставляет доступным `localhost` — этого достаточно для
-сетевых задач (T23–T25), сервисы которых слушают внутри контейнера.
-Docker-сокет хоста монтировать нельзя; privileged-режим не требуется.
+## Проверка решения
 
-## Флаги
+Ожидаемый флаг каждой задачи — в таблице выше.  Студент получает его,
+найдя ключ и выполнив `./decrypt.sh <ключ>`.
 
-Флаг имеет вид `flag{...}` и уникален для каждой задачи.
-
-По умолчанию флаг **генерируется при запуске контейнера** в `setup.sh`.
-Платформа может переопределить его переменной окружения:
+## Готовые архивы образов
 
 ```bash
-docker run --rm -it -e TASK_FLAG='flag{...}' linux-ctf/t01
+cd tasks
+mkdir -p dist
+for t in $(seq -w 1 15); do
+    docker save "linux-ctf/t${t}:latest" -o "dist/linux-ctf-t${t}.tar"
+done
+( cd dist && sha256sum linux-ctf-t*.tar > SHA256SUMS )
 ```
 
-Скрипты используют конструкцию `${TASK_FLAG:-flag{default}}`, поэтому
-реальный флаг удобно не хранить в образе, а подставлять в runtime.
-
-Для бинарных задач (T15, T16, T26) реальный флаг внедряется в ELF уже
-при старте контейнера утилитой `patch_flag.py`: в самом бинарнике на
-этапе сборки лежит только плейсхолдер `flag{PLACEHOLDER_DO_NOT_SHIP}`.
-
-## Жизненный цикл контейнера
-
-```text
-создание контейнера
-        ↓
-/opt/setup.sh          (root: файлы, права, генерация флага)
-        ↓
-/opt/start-services.sh (root: фоновые процессы и сервисы)
-        ↓
-сброс привилегий до ctf
-        ↓
-интерактивный shell
-        ↓
-проверка флага
-        ↓
-удаление контейнера
-```
-
-Точка входа описана в `base/entrypoint.sh`.
+Каталог `dist/` исключён из git и предназначен для раздачи
+(`docker load -i` описан в [STUDENT-GUIDE.md](STUDENT-GUIDE.md)).
 
 ## Тесты
 
@@ -166,6 +131,6 @@ docker run --rm -it -e TASK_FLAG='flag{...}' linux-ctf/t01
 tasks/tests/smoke.sh
 ```
 
-Скрипт собирает образы и проверяет, что контейнер запускается, нужные
-пользователи/файлы/права/процессы/сервисы присутствуют и флаг находится
-там, где ожидается.  Требуется запущенный Docker.
+Для каждого образа проверяется: отсутствие открытого флага и
+`/opt/setup.sh`, нахождение ключа штатным способом и корректная
+расшифровка, а также специфичные свойства (права, группы, процессы).
